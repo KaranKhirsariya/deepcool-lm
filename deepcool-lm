@@ -293,10 +293,18 @@ def get_system_info():
     # CPU temperature
     try:
         temps = psutil.sensors_temperatures()
-        if 'coretemp' in temps and len(temps['coretemp']) > 0:
-            info['cpu_temp'] = round(temps['coretemp'][0].current, 1)
-        if 'nvme' in temps and len(temps['nvme']) > 0:
-            info['gpu_temp'] = round(temps['nvme'][0].current, 1)
+        # CPU: try AMD then Intel then generic
+        for key in ('k10temp', 'coretemp', 'cpu_thermal', 'zenpower'):
+            if key in temps and temps[key]:
+                pref = next((s.current for s in temps[key] if s.label in ('Tctl', 'Package id 0', 'Tdie')), None)
+                info['cpu_temp'] = round(pref if pref is not None else temps[key][0].current, 1)
+                break
+        # GPU: AMD then NVIDIA fallback
+        for key in ('amdgpu', 'nvidia', 'nouveau'):
+            if key in temps and temps[key]:
+                edge = next((s.current for s in temps[key] if s.label == 'edge'), None)
+                info['gpu_temp'] = round(edge if edge is not None else temps[key][0].current, 1)
+                break
     except:
         pass
 
