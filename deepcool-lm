@@ -377,12 +377,18 @@ def read_nvidia_gpu():
         pass
     return None
 
+_core_ids_cache = None
+
 def read_core_ids():
     """Map each logical CPU to its physical core_id via sysfs topology.
 
-    Used to fold SMT sibling threads back onto physical cores. Returns a list
-    indexed by logical CPU, or an empty list if topology is unavailable.
+    Used to fold SMT sibling threads back onto physical cores. The topology is
+    fixed for the life of the process, so the result is read once and cached.
+    Returns a list indexed by logical CPU, or an empty list if unavailable.
     """
+    global _core_ids_cache
+    if _core_ids_cache is not None:
+        return _core_ids_cache
     ids = []
     i = 0
     while True:
@@ -392,6 +398,7 @@ def read_core_ids():
         except OSError:
             break
         i += 1
+    _core_ids_cache = ids
     return ids
 
 def fold_cores(per_cpu):
