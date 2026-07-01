@@ -12,6 +12,7 @@ import psutil
 import socket
 import json
 import os
+import subprocess
 import threading
 from PIL import Image, ImageDraw, ImageFont
 
@@ -281,6 +282,58 @@ def load_fonts():
         default = ImageFont.load_default()
         return {k: default for k in ['medium', 'normal', 'normal_bold', 'small']}
 
+def read_nvidia_gpu_temp():
+    """Read discrete NVIDIA GPU temperature via nvidia-smi (NVML).
+
+    NVIDIA GPUs are not exposed through psutil.sensors_temperatures()/lm-sensors,
+    so a discrete NVIDIA card is invisible to the psutil path below. When multiple
+    GPUs are present, return the hottest. Returns a float, or None if unavailable.
+    """
+    try:
+        out = subprocess.run(
+            ['nvidia-smi', '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0:
+            temps = [float(line) for line in out.stdout.splitlines() if line.strip()]
+            if temps:
+                return max(temps)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+def read_psutil_gpu_temp(temps):
+    """Read AMD/nouveau GPU temperature from psutil sensor data.
+
+    Returns a float, or None if no matching sensor is present.
+    """
+    for key in ('amdgpu', 'nouveau'):
+        if key in temps and temps[key]:
+            edge = next((s.current for s in temps[key] if s.label == 'edge'), None)
+            return edge if edge is not None else temps[key][0].current
+    return None
+
+def read_cpu_freq_ghz():
+    """Return the fastest active core clock in GHz.
+
+    psutil.cpu_freq().current is the arithmetic mean across all logical CPUs.
+    On a GPU-bound / mostly-idle workload most cores park at their minimum
+    (~0.6 GHz under amd-pstate 'powersave'), dragging that mean far below the
+    boost clock the busy cores are actually running at. Windows Task Manager and
+    the stock DeepCool software report the peak active-core clock, so match that
+    by taking the max across cores. Returns a float GHz, or 0.0 if unavailable.
+    """
+    try:
+        per = psutil.cpu_freq(percpu=True)
+        if per:
+            return round(max(c.current for c in per) / 1000, 2)
+        freq = psutil.cpu_freq()
+        if freq:
+            return round(freq.current / 1000, 2)
+    except Exception:
+        pass
+    return 0.0
+
 def get_system_info():
     """Get all system information"""
     info = {
@@ -299,21 +352,21 @@ def get_system_info():
                 pref = next((s.current for s in temps[key] if s.label in ('Tctl', 'Package id 0', 'Tdie')), None)
                 info['cpu_temp'] = round(pref if pref is not None else temps[key][0].current, 1)
                 break
-        # GPU: AMD then NVIDIA fallback
-        for key in ('amdgpu', 'nvidia', 'nouveau'):
-            if key in temps and temps[key]:
-                edge = next((s.current for s in temps[key] if s.label == 'edge'), None)
-                info['gpu_temp'] = round(edge if edge is not None else temps[key][0].current, 1)
-                break
+        # GPU: prefer discrete NVIDIA (invisible to psutil, read via nvidia-smi),
+        # then fall back to AMD/nouveau. This avoids showing an idle integrated GPU
+        # (e.g. Ryzen amdgpu sensor) instead of the busy discrete card.
+        gpu_temp = read_nvidia_gpu_temp()
+        if gpu_temp is None:
+            gpu_temp = read_psutil_gpu_temp(temps)
+        if gpu_temp is not None:
+            info['gpu_temp'] = round(gpu_temp, 1)
     except:
         pass
 
     # CPU usage and frequency
     try:
         info['cpu_percent'] = round(psutil.cpu_percent(interval=0.1), 1)
-        freq = psutil.cpu_freq()
-        if freq:
-            info['cpu_freq'] = round(freq.current / 1000, 2)
+        info['cpu_freq'] = read_cpu_freq_ghz()
     except:
         pass
 
