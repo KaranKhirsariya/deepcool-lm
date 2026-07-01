@@ -1,0 +1,20 @@
+# Python dependencies for deepcool-lm
+#
+# pip:    pip install -r requirements.txt
+# Debian/Ubuntu (system packages):
+#         sudo apt install python3-psutil python3-pyusb python3-pil python3-pynvml
+# Arch:   dependencies are declared in PKGBUILD
+#
+# The USB device access and the systemd service still require root; this file
+# only covers the Python packages.
+
+# --- Required ---
+psutil        # CPU/GPU temperatures, CPU usage and per-core / frequency data
+pyusb         # USB communication with the LM series display (module: usb)
+Pillow        # Framebuffer rendering (module: PIL)
+
+# --- Optional ---
+# nvidia-ml-py provides NVML bindings (module: pynvml) for low-overhead NVIDIA
+# GPU temp/utilisation/VRAM. Without it, deepcool-lm falls back to spawning
+# nvidia-smi each frame. Uncomment (or `pip install nvidia-ml-py`) on NVIDIA hosts.
+# nvidia-ml-py
