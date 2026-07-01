@@ -2,7 +2,7 @@
 #
 # pip:    pip install -r requirements.txt
 # Debian/Ubuntu (system packages):
-#         sudo apt install python3-psutil python3-pyusb python3-pil python3-pynvml
+#         sudo apt install python3-psutil python3-usb python3-pil python3-pynvml
 # Arch:   dependencies are declared in PKGBUILD
 #
 # The USB device access and the systemd service still require root; this file
