@@ -11,6 +11,7 @@ pkgbase = deepcool-lm
 	depends = python-psutil
 	depends = python-pillow
 	depends = lm_sensors
+	optdepends = python-nvidia-ml-py: low-overhead NVIDIA GPU temp/util/VRAM via NVML (otherwise falls back to nvidia-smi)
 	backup = etc/systemd/system/deepcool-lm.service
 	source = deepcool-lm
 	source = deepcool-lm.service

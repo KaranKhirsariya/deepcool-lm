@@ -346,14 +346,55 @@ def load_fonts():
     default = ImageFont.load_default()
     return {k: default for k in FONT_SIZES}
 
-def read_nvidia_gpu():
-    """Read discrete NVIDIA GPU stats via nvidia-smi (NVML).
+# NVML (pynvml) state: None = not yet tried, False = unavailable, list = handles.
+# Initialised once and reused so per-frame queries don't spawn a subprocess.
+_nvml_state = None
 
-    NVIDIA GPUs are not exposed through psutil.sensors_temperatures()/lm-sensors,
-    so a discrete NVIDIA card is invisible to the psutil path below. Returns a
-    dict {temp, util, mem_used, mem_total} (memory in MiB) for the hottest GPU,
-    or None if nvidia-smi is unavailable.
+def _nvml_handles():
+    """Return cached NVML device handles, initialising NVML at most once.
+
+    Returns a non-empty list of handles, or None if pynvml/NVML is unavailable
+    (the caller then falls back to nvidia-smi).
     """
+    global _nvml_state
+    if _nvml_state is None:
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            _nvml_state = [pynvml.nvmlDeviceGetHandleByIndex(i)
+                           for i in range(pynvml.nvmlDeviceGetCount())]
+        except Exception:
+            _nvml_state = False
+    return _nvml_state or None
+
+def _read_nvidia_nvml():
+    """Read NVIDIA GPU stats via NVML (persistent handle, ~microseconds).
+
+    Returns a dict {temp, util, mem_used, mem_total} (memory in MiB) for the
+    hottest GPU, or None if NVML is unavailable or errors.
+    """
+    handles = _nvml_handles()
+    if not handles:
+        return None
+    try:
+        import pynvml
+        rows = []
+        for h in handles:
+            temp = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
+            util = pynvml.nvmlDeviceGetUtilizationRates(h).gpu
+            mem = pynvml.nvmlDeviceGetMemoryInfo(h)
+            rows.append((float(temp), float(util),
+                         mem.used / (1024 * 1024), mem.total / (1024 * 1024)))
+        if rows:
+            temp, util, used, total = max(rows, key=lambda r: r[0])
+            return {'temp': temp, 'util': util, 'mem_used': used, 'mem_total': total}
+    except Exception:
+        pass
+    return None
+
+def _read_nvidia_smi():
+    """Read NVIDIA GPU stats by spawning nvidia-smi (fallback when NVML is
+    unavailable). Returns the same dict shape as _read_nvidia_nvml(), or None."""
     try:
         out = subprocess.run(
             ['nvidia-smi',
@@ -376,6 +417,16 @@ def read_nvidia_gpu():
     except (OSError, subprocess.SubprocessError):
         pass
     return None
+
+def read_nvidia_gpu():
+    """Read discrete NVIDIA GPU stats (temp, util, VRAM in MiB) for the hottest
+    GPU, or None if no NVIDIA GPU is accessible.
+
+    NVIDIA GPUs are invisible to psutil.sensors_temperatures()/lm-sensors. Prefer
+    NVML via pynvml (a persistent handle queried in microseconds, no per-frame
+    subprocess), falling back to spawning nvidia-smi when the binding is absent.
+    """
+    return _read_nvidia_nvml() or _read_nvidia_smi()
 
 _core_ids_cache = None
 
