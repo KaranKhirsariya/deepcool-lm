@@ -472,8 +472,10 @@ def read_lhm_temps():
     """Read CPU and GPU temperatures via LibreHardwareMonitor (Windows).
 
     Returns {'cpu': float|None, 'gpu': float|None}, or None if LHM is
-    unavailable. The 'gpu' value is only the non-NVIDIA fallback path;
-    NVIDIA cards are read via NVML, which also provides util and VRAM.
+    unavailable. The 'gpu' value is a temperature-only fallback used when
+    NVML reports no NVIDIA card; it covers any GPU vendor LHM sees (AMD,
+    Intel, or an NVIDIA card NVML could not read). NVIDIA is normally read
+    via NVML, which also provides utilisation and VRAM.
     """
     computer = _lhm_computer()
     if computer is None:
@@ -548,6 +550,19 @@ def read_psutil_gpu_temp(temps):
             return edge if edge is not None else temps[key][0].current
     return None
 
+def _read_cpu_temp_psutil(temps):
+    """Read CPU temperature from psutil sensor data (Linux).
+
+    Tries AMD, Intel then generic chip keys, preferring the package/die
+    sensor over per-core ones. Returns a float, or None if absent.
+    """
+    for key in ('k10temp', 'coretemp', 'cpu_thermal', 'zenpower'):
+        if key in temps and temps[key]:
+            pref = next((s.current for s in temps[key]
+                         if s.label in ('Tctl', 'Package id 0', 'Tdie')), None)
+            return pref if pref is not None else temps[key][0].current
+    return None
+
 def read_cpu_freq_ghz():
     """Return the fastest active core clock in GHz.
 
@@ -582,18 +597,21 @@ def get_system_info():
         'vram_total': 0.0,    # MiB
     }
 
-    # CPU temperature
+    # Temperatures: LibreHardwareMonitor on Windows (psutil has no sensor
+    # support there), psutil/lm-sensors on Linux.
     try:
-        temps = psutil.sensors_temperatures()
-        # CPU: try AMD then Intel then generic
-        for key in ('k10temp', 'coretemp', 'cpu_thermal', 'zenpower'):
-            if key in temps and temps[key]:
-                pref = next((s.current for s in temps[key] if s.label in ('Tctl', 'Package id 0', 'Tdie')), None)
-                info['cpu_temp'] = round(pref if pref is not None else temps[key][0].current, 1)
-                break
-        # GPU: prefer discrete NVIDIA (invisible to psutil, read via nvidia-smi),
-        # then fall back to AMD/nouveau temp only. This avoids showing an idle
-        # integrated GPU (e.g. Ryzen amdgpu sensor) instead of the busy card.
+        lhm = read_lhm_temps() if IS_WINDOWS else None
+        temps = {} if IS_WINDOWS else psutil.sensors_temperatures()
+        if lhm and lhm.get('cpu') is not None:
+            info['cpu_temp'] = round(lhm['cpu'], 1)
+        else:
+            cpu_temp = _read_cpu_temp_psutil(temps)
+            if cpu_temp is not None:
+                info['cpu_temp'] = round(cpu_temp, 1)
+        # GPU: prefer discrete NVIDIA (temp/util/VRAM via NVML on every OS),
+        # then fall back to temp-only readings: AMD/nouveau via psutil on
+        # Linux, LHM on Windows. This avoids showing an idle integrated GPU
+        # (e.g. Ryzen amdgpu sensor) instead of the busy card.
         nv = read_nvidia_gpu()
         if nv is not None:
             info['gpu_temp'] = round(nv['temp'], 1)
@@ -601,7 +619,8 @@ def get_system_info():
             info['vram_used'] = nv['mem_used']
             info['vram_total'] = nv['mem_total']
         else:
-            gpu_temp = read_psutil_gpu_temp(temps)
+            gpu_temp = (lhm or {}).get('gpu') if IS_WINDOWS \
+                else read_psutil_gpu_temp(temps)
             if gpu_temp is not None:
                 info['gpu_temp'] = round(gpu_temp, 1)
     except:
