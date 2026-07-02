@@ -435,6 +435,70 @@ def read_nvidia_gpu():
     """
     return _read_nvidia_nvml() or _read_nvidia_smi()
 
+# LibreHardwareMonitor (Windows) state: None = not yet tried, False =
+# unavailable, otherwise the opened Computer object. Initialised once and
+# reused so per-frame polls are in-process reads, no subprocess or re-init.
+_lhm_state = None
+
+def _lhm_computer():
+    """Return the opened LibreHardwareMonitor Computer, initialising at most
+    once.
+
+    Returns None when unavailable: non-Windows, pythonnet missing, or the
+    process lacks the elevation LHM's WinRing0 kernel driver needs.
+    """
+    global _lhm_state
+    if _lhm_state is None:
+        _lhm_state = False
+        try:
+            import clr
+            sys.path.append(os.path.join(_script_dir(), 'assets', 'win'))
+            clr.AddReference('LibreHardwareMonitorLib')
+            from LibreHardwareMonitor import Hardware
+            computer = Hardware.Computer()
+            computer.IsCpuEnabled = True
+            computer.IsGpuEnabled = True
+            computer.Open()
+            _lhm_state = computer
+        except Exception:
+            _lhm_state = False
+    return _lhm_state or None
+
+# Preferred CPU temperature sensor names, best first (AMD dies report
+# Tctl/Tdie; Intel reports a package sensor).
+_LHM_CPU_PREF = ('Core (Tctl/Tdie)', 'CPU Package', 'Core Average')
+
+def read_lhm_temps():
+    """Read CPU and GPU temperatures via LibreHardwareMonitor (Windows).
+
+    Returns {'cpu': float|None, 'gpu': float|None}, or None if LHM is
+    unavailable. The 'gpu' value is only the non-NVIDIA fallback path;
+    NVIDIA cards are read via NVML, which also provides util and VRAM.
+    """
+    computer = _lhm_computer()
+    if computer is None:
+        return None
+    try:
+        from LibreHardwareMonitor.Hardware import HardwareType, SensorType
+        result = {'cpu': None, 'gpu': None}
+        gpu_types = (HardwareType.GpuAmd, HardwareType.GpuIntel,
+                     HardwareType.GpuNvidia)
+        for hw in computer.Hardware:
+            hw.Update()
+            temps = {s.Name: float(s.Value) for s in hw.Sensors
+                     if s.SensorType == SensorType.Temperature
+                     and s.Value is not None}
+            if not temps:
+                continue
+            if hw.HardwareType == HardwareType.Cpu and result['cpu'] is None:
+                pref = next((temps[n] for n in _LHM_CPU_PREF if n in temps), None)
+                result['cpu'] = pref if pref is not None else max(temps.values())
+            elif hw.HardwareType in gpu_types and result['gpu'] is None:
+                result['gpu'] = temps.get('GPU Core', max(temps.values()))
+        return result
+    except Exception:
+        return None
+
 _core_ids_cache = None
 
 def read_core_ids():
