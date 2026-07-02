@@ -178,6 +178,45 @@ This will:
 - Remove the CLI tool
 - Clean up socket files
 
+## Windows
+
+Experimental support: the live system monitor with autostart at login.
+The `image`, `solid` and `brightness` commands against a running monitor are
+not yet supported on Windows (no IPC), and the per-core strip shows logical
+threads rather than physical cores.
+
+### Prerequisites
+
+1. **Python 3.10+** from [python.org](https://www.python.org/downloads/windows/)
+   — tick "Add python.exe to PATH" during setup.
+2. **WinUSB driver bound to the display (one-time).** Download
+   [Zadig](https://zadig.akeo.ie), then: Options → List All Devices, select
+   the device with USB ID `3633 0026`, choose **WinUSB**, click
+   **Replace Driver**.
+
+   > ⚠️ This replaces the stock DeepCool driver — the stock DeepCool app can
+   > no longer drive the display afterwards. Revert anytime via Device
+   > Manager → the LM device → Update driver.
+
+### Install
+
+From an **elevated** (Run as administrator) PowerShell in the repo folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+```
+
+This creates a local `.venv`, installs the Python dependencies, and registers
+a Scheduled Task that starts the monitor headless at every logon, elevated
+(CPU temperatures are read through LibreHardwareMonitor, which needs
+administrator rights for its WinRing0 kernel driver).
+
+### Uninstall
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
+```
+
 ## Technical Details
 
 ### Compatibility
