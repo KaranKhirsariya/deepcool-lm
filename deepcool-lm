@@ -912,9 +912,9 @@ def _ensure_streams():
     to devnull so the existing status prints become harmless no-ops.
     """
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, 'w')
+        sys.stdout = open(os.devnull, 'w', encoding='utf-8')
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, 'w')
+        sys.stderr = open(os.devnull, 'w', encoding='utf-8')
 
 def _print_connect_help():
     print("✗ Failed to connect to LM360")

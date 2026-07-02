@@ -18,6 +18,11 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $taskName = 'deepcool-lm'
 
+# Clear Mark-of-the-Web on the vendored DLLs. If the repo was obtained via
+# GitHub "Download ZIP", the DLLs carry the internet zone and .NET refuses
+# to load them, silently disabling CPU temps. (No-op after a git clone.)
+Get-ChildItem "$root\assets\win\*.dll" -ErrorAction SilentlyContinue | Unblock-File
+
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     throw "Python not found on PATH. Install Python 3.10+ from python.org and tick 'Add python.exe to PATH'."
 }
@@ -43,7 +48,8 @@ $trigger   = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERN
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
              -LogonType Interactive -RunLevel Highest
 $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-             -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+             -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
+             -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Principal $principal -Settings $settings -Force | Out-Null
 

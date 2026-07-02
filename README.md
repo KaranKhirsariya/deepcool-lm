@@ -183,7 +183,10 @@ This will:
 Experimental support: the live system monitor with autostart at login.
 The `image`, `solid` and `brightness` commands against a running monitor are
 not yet supported on Windows (no IPC), and the per-core strip shows logical
-threads rather than physical cores.
+threads rather than physical cores. The CPU frequency reads a static nominal
+clock (Windows doesn't expose a live per-core boost clock to psutil), and for
+AMD/Intel GPUs only temperature is shown (no utilisation or VRAM); NVIDIA GPUs
+report full stats via NVML.
 
 ### Prerequisites
 
