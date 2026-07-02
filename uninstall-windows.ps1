@@ -8,6 +8,6 @@ $ErrorActionPreference = 'Stop'
 $taskName = 'deepcool-lm'
 
 Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 Write-Host "Removed scheduled task '$taskName'."
 Write-Host 'The .venv directory and the WinUSB binding were left in place.'
