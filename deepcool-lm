@@ -21,6 +21,7 @@ PRODUCT_ID = 0x0026
 EP_OUT = 0x01
 WIDTH = 320
 HEIGHT = 240
+IS_WINDOWS = sys.platform == 'win32'
 
 # Frame header that works
 FRAME_HEADER = bytes([0xaa, 0x08, 0x00, 0x00, 0x01, 0x00, 0x58, 0x02, 0x00, 0x2c, 0x01, 0xbc, 0x11])
@@ -786,7 +787,20 @@ def cmd_brightness(device, args):
 # Main Entry Point
 # ============================================================================
 
+def _ensure_streams():
+    """Give print() a safe sink when running headless.
+
+    Under pythonw.exe (the Windows no-console interpreter) sys.stdout and
+    sys.stderr are None, so any print() would raise. Redirect missing streams
+    to devnull so the existing status prints become harmless no-ops.
+    """
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w')
+
 def main():
+    _ensure_streams()
     parser = argparse.ArgumentParser(
         description='Deepcool LM360 LCD Driver',
         formatter_class=argparse.RawDescriptionHelpFormatter,
