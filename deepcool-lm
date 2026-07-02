@@ -298,15 +298,21 @@ def get_vram_color(frac):
     else:
         return (240, 70, 60)    # red
 
-def _find_font_file(bold=False):
-    """Locate a DejaVu Sans font file across common distro layouts.
+def _script_dir():
+    """Directory containing this script; bundled assets live next to it."""
+    return os.path.dirname(os.path.abspath(__file__))
 
-    The path differs by distro (Arch uses .../fonts/TTF, Debian/Ubuntu use
-    .../fonts/truetype/dejavu), so try the known locations and fall back to
-    fc-match. Returns a path string, or None if nothing is found.
+def _find_font_file(bold=False):
+    """Locate a DejaVu Sans font file, preferring the copy bundled with the
+    script (identical rendering on every OS, and the only option on Windows).
+
+    Falls back to known distro locations (Arch uses .../fonts/TTF,
+    Debian/Ubuntu use .../fonts/truetype/dejavu) and finally fc-match.
+    Returns a path string, or None if nothing is found.
     """
     suffix = "-Bold" if bold else ""
     candidates = [
+        os.path.join(_script_dir(), "assets", "fonts", f"DejaVuSans{suffix}.ttf"),
         f"/usr/share/fonts/TTF/DejaVuSans{suffix}.ttf",
         f"/usr/share/fonts/truetype/dejavu/DejaVuSans{suffix}.ttf",
         f"/usr/share/fonts/dejavu/DejaVuSans{suffix}.ttf",
