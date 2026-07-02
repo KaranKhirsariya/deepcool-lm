@@ -184,20 +184,36 @@ def send_ipc_command(cmd):
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
+def _usb_backend():
+    """Return an explicit libusb backend on Windows, where pyusb cannot find
+    libusb-1.0.dll on its own (libusb-package bundles it). Returns None on
+    Linux, or when the package is missing, to use pyusb's default discovery.
+    """
+    if not IS_WINDOWS:
+        return None
+    try:
+        import libusb_package
+        return libusb_package.get_libusb1_backend()
+    except Exception:
+        return None
+
 class LM360:
     def __init__(self):
         self.dev = None
         self.interface = 0
 
     def connect(self):
-        self.dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+        self.dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID,
+                                 backend=_usb_backend())
         if self.dev is None:
             return False
-        if self.dev.is_kernel_driver_active(self.interface):
-            try:
+        try:
+            # Kernel-driver detach is a Linux concern; the WinUSB backend
+            # raises NotImplementedError for these calls.
+            if self.dev.is_kernel_driver_active(self.interface):
                 self.dev.detach_kernel_driver(self.interface)
-            except:
-                pass
+        except (NotImplementedError, usb.core.USBError):
+            pass
         try:
             self.dev.set_configuration()
             usb.util.claim_interface(self.dev, self.interface)
@@ -888,6 +904,17 @@ def _ensure_streams():
     if sys.stderr is None:
         sys.stderr = open(os.devnull, 'w')
 
+def _print_connect_help():
+    print("✗ Failed to connect to LM360")
+    print("  Make sure:")
+    if IS_WINDOWS:
+        print("  - Device is plugged in")
+        print("  - WinUSB driver is bound to USB ID 3633:0026 (use Zadig)")
+        print("  - Running as Administrator")
+    else:
+        print("  - Device is plugged in (lsusb | grep 3633)")
+        print("  - Running with sudo")
+
 def main():
     _ensure_streams()
     parser = argparse.ArgumentParser(
@@ -953,19 +980,13 @@ Examples:
         # Starting monitor service directly (not via IPC)
         device = LM360()
         if not device.connect():
-            print("✗ Failed to connect to LM360")
-            print("  Make sure:")
-            print("  - Device is plugged in (lsusb | grep 3633)")
-            print("  - Running with sudo")
+            _print_connect_help()
             sys.exit(1)
     else:
         # Need direct USB access for other commands
         device = LM360()
         if not device.connect():
-            print("✗ Failed to connect to LM360")
-            print("  Make sure:")
-            print("  - Device is plugged in (lsusb | grep 3633)")
-            print("  - Running with sudo")
+            _print_connect_help()
             sys.exit(1)
 
     try:
