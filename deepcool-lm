@@ -773,6 +773,20 @@ def render_monitor_display(info, fonts):
 # Command Functions
 # ============================================================================
 
+def _start_ipc(device, display_state):
+    """Start the Unix-socket IPC server and return it, or None on Windows.
+
+    AF_UNIX does not exist on Windows and the IPC-driven commands
+    (image/solid/brightness against a running instance) are out of scope
+    there for now; the monitor runs fine without it.
+    """
+    if IS_WINDOWS:
+        return None
+    server = IPCServer(device, display_state)
+    server.start()
+    print("IPC server started on", SOCKET_PATH)
+    return server
+
 def cmd_monitor(device, args):
     """Display system monitoring continuously"""
     # Send init command first
@@ -787,10 +801,7 @@ def cmd_monitor(device, args):
     # Create display state
     display_state = DisplayState()
 
-    # Start IPC server
-    ipc_server = IPCServer(device, display_state)
-    ipc_server.start()
-    print("IPC server started on", SOCKET_PATH)
+    ipc_server = _start_ipc(device, display_state)
 
     try:
         frame_count = 0
@@ -816,7 +827,8 @@ def cmd_monitor(device, args):
     except KeyboardInterrupt:
         print(f"\n\nStopped after {frame_count} frames")
     finally:
-        ipc_server.stop()
+        if ipc_server:
+            ipc_server.stop()
 
 def cmd_image(device, args):
     """Display a custom image"""
