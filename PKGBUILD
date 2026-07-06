@@ -13,6 +13,9 @@ depends=(
     'python-pillow'
     'lm_sensors'
 )
+optdepends=(
+    'python-nvidia-ml-py: low-overhead NVIDIA GPU temp/util/VRAM via NVML (otherwise falls back to nvidia-smi)'
+)
 backup=('etc/systemd/system/deepcool-lm.service')
 install=deepcool-lm.install
 source=(
