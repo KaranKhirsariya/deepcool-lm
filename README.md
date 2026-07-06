@@ -6,6 +6,16 @@ A comprehensive Linux driver for Deepcool LM series AIO coolers with LCD display
 
 ![Deepcool LM360 Display Preview](lm360.png)
 
+## Improved monitor metrics
+
+![Deepcool LM360 Display Preview](lm360-improved-monitors.png)
+
+This new version includes:
+- additional CPU core line on the top denoting each physical core as color coded suare based on it's usage
+- Added CPU temp support for AMD cpus
+- Added GPU VRAM, Temp and util metrics precise for NVIDIA GPUs
+- Redesigned whole layout to feel more symmetric and accomodate more metrics efficiently without cluttering with just more text.
+
 > **Note**: This driver is designed for Deepcool LM series coolers. Currently tested and confirmed working on **LM360** only. Other LM series models (LM240, LM280, etc.) may work but have not been tested. Contributions and testing reports are welcome!
 
 ## Features
