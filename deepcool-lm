@@ -189,7 +189,10 @@ class LM360:
         self.interface = 0
 
     def connect(self):
-        self.dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+        try:
+            self.dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+        except Exception:
+            self.dev = None
         if self.dev is None:
             return False
         if self.dev.is_kernel_driver_active(self.interface):
@@ -200,9 +203,21 @@ class LM360:
         try:
             self.dev.set_configuration()
             usb.util.claim_interface(self.dev, self.interface)
+            return True
+        except:
+            pass
+        # Enumerated but stuck claiming the interface - typically left in a bad
+        # state by an unclean previous session. A bus reset recovers it without
+        # needing a full power cycle; a warm reboot alone doesn't clear this
+        # since the controller stays powered across it.
+        try:
+            self.dev.reset()
+            time.sleep(1)
+            self.dev.set_configuration()
+            usb.util.claim_interface(self.dev, self.interface)
+            return True
         except:
             return False
-        return True
 
     def write(self, data):
         try:
@@ -667,6 +682,25 @@ def render_monitor_display(info, fonts):
 # Command Functions
 # ============================================================================
 
+def connect_with_retry(device, timeout=60, interval=2):
+    """Keep trying device.connect() until it succeeds or timeout elapses.
+
+    Used for the boot-time service start, where the AIO's USB controller can
+    still be enumerating when systemd launches us (systemd-udev-settle only
+    guarantees already-queued udev events are processed, not that this
+    specific device has finished coming up).
+    """
+    deadline = time.time() + timeout
+    attempt = 0
+    while True:
+        attempt += 1
+        if device.connect():
+            return True
+        if time.time() >= deadline:
+            return False
+        print(f"Device not ready, retrying ({attempt})...", file=sys.stderr)
+        time.sleep(interval)
+
 def cmd_monitor(device, args):
     """Display system monitoring continuously"""
     # Send init command first
@@ -847,9 +881,11 @@ Examples:
                 print("✗ Failed to switch to monitoring mode")
                 sys.exit(1)
     elif args.command == 'monitor' and not service_running:
-        # Starting monitor service directly (not via IPC)
+        # Starting monitor service directly (not via IPC). This is the path
+        # systemd launches at boot, where the device may still be enumerating,
+        # so retry for a while instead of failing on the first attempt.
         device = LM360()
-        if not device.connect():
+        if not connect_with_retry(device):
             print("✗ Failed to connect to LM360")
             print("  Make sure:")
             print("  - Device is plugged in (lsusb | grep 3633)")

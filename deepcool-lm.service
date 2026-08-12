@@ -3,6 +3,11 @@ Description=Deepcool LM360 LCD Display Driver
 After=systemd-udev-settle.service lm_sensors.service
 Wants=lm_sensors.service
 
+# Never permanently give up restarting: the default 5-failures-per-10s limit
+# is easy to trip if the device is briefly wedged, which would otherwise
+# leave the LCD blank until a manual restart or reboot.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/deepcool-lm monitor --interval 2
