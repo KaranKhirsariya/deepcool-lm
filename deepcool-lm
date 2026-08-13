@@ -221,15 +221,18 @@ class LM360:
 
     def write(self, data):
         try:
-            return self.dev.write(EP_OUT, data, timeout=5000)
+            self.dev.write(EP_OUT, data, timeout=5000)
+            return True
         except Exception as e:
             print(f"Write error: {e}")
-            return 0
+            return False
 
     def send_frame(self, framebuffer):
-        """Send a frame to the display"""
-        self.write(FRAME_HEADER)
-        self.write(framebuffer)
+        """Send a frame to the display. Returns False if the device dropped
+        off the bus mid-write, so the caller can reconnect."""
+        header_ok = self.write(FRAME_HEADER)
+        frame_ok = self.write(framebuffer)
+        return header_ok and frame_ok
 
     def brightness_up(self):
         """Increase brightness"""
@@ -683,20 +686,22 @@ def render_monitor_display(info, fonts):
 # ============================================================================
 
 def connect_with_retry(device, timeout=60, interval=2):
-    """Keep trying device.connect() until it succeeds or timeout elapses.
+    """Keep trying device.connect() until it succeeds, or timeout elapses
+    (timeout=None retries forever).
 
-    Used for the boot-time service start, where the AIO's USB controller can
-    still be enumerating when systemd launches us (systemd-udev-settle only
-    guarantees already-queued udev events are processed, not that this
-    specific device has finished coming up).
+    Used both for the boot-time service start, where the AIO's USB controller
+    can still be enumerating when systemd launches us (systemd-udev-settle
+    only guarantees already-queued udev events are processed, not that this
+    specific device has finished coming up), and for recovering a device that
+    drops off the bus mid-session.
     """
-    deadline = time.time() + timeout
+    deadline = None if timeout is None else time.time() + timeout
     attempt = 0
     while True:
         attempt += 1
         if device.connect():
             return True
-        if time.time() >= deadline:
+        if deadline is not None and time.time() >= deadline:
             return False
         print(f"Device not ready, retrying ({attempt})...", file=sys.stderr)
         time.sleep(interval)
@@ -725,20 +730,33 @@ def cmd_monitor(device, args):
         while True:
             # Check current display mode
             mode, data = display_state.get_state()
+            ok = True
 
             if mode == 'monitor':
                 # Generate and display monitoring frame
                 info = get_system_info()
                 framebuffer = render_monitor_display(info, fonts)
-                device.send_frame(framebuffer)
+                ok = device.send_frame(framebuffer)
 
                 frame_count += 1
                 print(f"[MONITOR] Frame {frame_count:4d} | CPU: {info['cpu_temp']:5.1f}°C ({info['cpu_percent']:4.1f}%) {info['cpu_freq']:.2f}GHz | GPU: {info['gpu_temp']:5.1f}°C ({info['gpu_util']:4.1f}%) VRAM {info['vram_used']/1024:.0f}/{info['vram_total']/1024:.0f}GB", end='\r')
             elif mode in ['image', 'solid']:
                 # Display static content
                 if data:
-                    device.send_frame(data)
+                    ok = device.send_frame(data)
                     print(f"[{mode.upper()}] Displaying static content...                                                                ", end='\r')
+
+            if not ok:
+                # Device dropped off the bus mid-session (e.g. a controller
+                # hiccup) - reconnect instead of spinning on write errors
+                # forever with a frozen display.
+                print("\nLost connection to display, reconnecting...", file=sys.stderr)
+                device.disconnect()
+                connect_with_retry(device, timeout=None)
+                print("Reconnected.", file=sys.stderr)
+                device.init_query()
+                time.sleep(0.5)
+                continue
 
             time.sleep(args.interval)
     except KeyboardInterrupt:
